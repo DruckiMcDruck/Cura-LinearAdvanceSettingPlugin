@@ -1,0 +1,342 @@
+# Copyright (c) 2019 DruckiMcDruck
+# The KlipperSettingsPlugin is released under the terms of the AGPLv3 or higher.
+
+from UM.Extension import Extension
+from UM.Application import Application
+from UM.Logger import Logger
+from UM.Settings.SettingDefinition import SettingDefinition
+from UM.Settings.DefinitionContainer import DefinitionContainer
+from UM.Settings.ContainerRegistry import ContainerRegistry
+
+from UM.i18n import i18nCatalog
+i18n_catalog = i18nCatalog("KlipperSettingsPlugin")
+
+class KlipperSettingsPlugin(Extension):
+    def __init__(self):
+        super().__init__()
+
+        self._application = Application.getInstance()
+
+        self._i18n_catalog = None
+
+# Pressure Advance Settings
+        self._setting_key_klipper_pressure_advance = "material_klipper_pressure_advance"
+        self._setting_dict_klipper_pressure_advance = {
+            "label": "Klipper Pressure Advance",
+            "description": "blabla",
+            "type": "float",
+            "default_value": 0,
+            "settable_per_mesh": False,
+            "settable_per_extruder": False,
+            "settable_per_meshgroup": False
+        }
+
+        self._setting_key_klipper_pressure_advance_lookahead = "material_klipper_pressure_advance_lookahead"
+        self._setting_dict_klipper_pressure_advance_lookahead = {
+            "label": "Klipper Pressure Advance Lookahead",
+            "description": "blabla",
+            "type": "float",
+            "default_value": 0.01,
+            "settable_per_mesh": False,
+            "settable_per_extruder": False,
+            "settable_per_meshgroup": False
+        }
+
+
+# Acceleration Settings
+        self._setting_key_square_corner_velocity = "speed_square_corner_velocity"
+        self._setting_dict_square_corner_velocity = {
+            "label": "Klipper Square Corner Velocity",
+            "description": "Sets the cornering velocity of Klipper. Reduce to minimise ghosting.",
+            "type": "float",
+            "default_value": 5,
+            "settable_per_mesh": False,
+            "settable_per_extruder": False,
+            "settable_per_meshgroup": False
+        }
+
+        self._setting_key_klipper_acceleration = "speed_klipper_acceleration"
+        self._setting_dict_klipper_acceleration = {
+            "label": "Klipper Acceleration",
+            "description": "Sets the Acceleration value of Klipper.",
+            "type": "float",
+            "default_value": 1000,
+            "settable_per_mesh": False,
+            "settable_per_extruder": False,
+            "settable_per_meshgroup": False
+        }
+
+        self._setting_key_klipper_acceleration_to_deceleration = "speed_klipper_acceleration_to_deceleration"
+        self._setting_dict_klipper_acceleration_to_deceleration = {
+            "label": "Klipper Accel to Decel",
+            "description": "Sets the Acceleration to Deceleration value of Klipper. Lower this value to prevent hard acceleration on small linear moves.",
+            "type": "float",
+            "default_value": 500,
+            "settable_per_mesh": False,
+            "settable_per_extruder": False,
+            "settable_per_meshgroup": False
+        }
+
+        self._setting_key_klipper_acceleration_order = "speed_klipper_acceleration_order"
+        self._setting_dict_klipper_acceleration_order = {
+            "label": "Klipper Acceleration Order",
+            "description": "Sets the Acceleration Order for Klipper. Note that only 2, 4 and 6 are valid options. Will default to 2 if wrong value is set.",
+            "type": "int",
+            "default_value": 2,
+            "settable_per_mesh": False,
+            "settable_per_extruder": False,
+            "settable_per_meshgroup": False
+        }
+
+        ContainerRegistry.getInstance().containerLoadComplete.connect(self._onContainerLoadComplete)
+        self._application.getOutputDeviceManager().writeStarted.connect(self._filterGcode)
+
+    def _onContainerLoadComplete(self, container_id):
+        container = ContainerRegistry.getInstance().findContainers(id = container_id)[0]
+        if not isinstance(container, DefinitionContainer):
+            # skip containers that are not definitions
+            return
+        if container.getMetaDataEntry("type") == "extruder":
+            # skip extruder definitions
+            return
+
+        material_category1 = container.findDefinitions(key="material") # Pressure Advance
+        material_category2 = container.findDefinitions(key="material") # Pressure Advance Lookahead
+        speed_category1 = container.findDefinitions(key="speed") # square corner velocity
+        speed_category4 = container.findDefinitions(key="speed") # acceleration
+        speed_category2 = container.findDefinitions(key="speed") # acceleration to deceleration
+        speed_category3 = container.findDefinitions(key="speed") # acceleration order
+
+        pressure_advance_setting = container.findDefinitions(key=self._setting_key_klipper_pressure_advance)
+        pressure_advance_lookahead_setting = container.findDefinitions(key=self._setting_key_klipper_pressure_advance_lookahead)
+        square_corner_velocity_setting = container.findDefinitions(key=self._setting_key_square_corner_velocity)
+        acceleration_setting = container.findDefinitions(key=self._setting_key_klipper_acceleration)
+        acceleration_to_deceleration_setting = container.findDefinitions(key=self._setting_key_klipper_acceleration_to_deceleration)
+        acceleration_order_setting = container.findDefinitions(key=self._setting_key_klipper_acceleration_order)
+
+        # Pressure Advance Lookahead
+        if material_category2 and not pressure_advance_lookahead_setting:
+            # this machine doesn't have a Pressure Advance setting yet
+            material_category2 = material_category2[0]
+            pressure_advance_lookahead_definition = SettingDefinition(self._setting_key_klipper_pressure_advance_lookahead, container, material_category2, self._i18n_catalog)
+            pressure_advance_lookahead_definition.deserialize(self._setting_dict_klipper_pressure_advance_lookahead)
+
+            # add the setting to the already existing PA setting definition
+            # private member access is naughty, but the alternative is to serialise, nix and deserialise the whole thing,
+            # which breaks stuff
+            material_category2._children.append(pressure_advance_lookahead_definition)
+            container._definition_cache[self._setting_key_klipper_pressure_advance_lookahead] = pressure_advance_lookahead_definition
+            container._updateRelations(pressure_advance_lookahead_definition)
+
+        # Pressure Advance
+        if material_category1 and not pressure_advance_setting:
+            # this machine doesn't have a Pressure Advance setting yet
+            material_category1 = material_category1[0]
+            pressure_advance_definition = SettingDefinition(self._setting_key_klipper_pressure_advance, container, material_category1, self._i18n_catalog)
+            pressure_advance_definition.deserialize(self._setting_dict_klipper_pressure_advance)
+
+            # add the setting to the already existing PA setting definition
+            # private member access is naughty, but the alternative is to serialise, nix and deserialise the whole thing,
+            # which breaks stuff
+            material_category1._children.append(pressure_advance_definition)
+            container._definition_cache[self._setting_key_klipper_pressure_advance] = pressure_advance_definition
+            container._updateRelations(pressure_advance_definition)
+
+        # Square Corner Velocity
+        if speed_category1 and not square_corner_velocity_setting:
+            # this machine doesn't have a Square Corner Velocity setting yet
+            speed_category1 = speed_category1[0]
+            square_corner_velocity_definition = SettingDefinition(self._setting_key_square_corner_velocity, container, speed_category1, self._i18n_catalog)
+            square_corner_velocity_definition.deserialize(self._setting_dict_square_corner_velocity)
+
+            # add the setting to the already existing speed settingdefinition
+            # private member access is naughty, but the alternative is to serialise, nix and deserialise the whole thing,
+            # which breaks stuff
+            speed_category1._children.append(square_corner_velocity_definition)
+            container._definition_cache[self._setting_key_square_corner_velocity] = square_corner_velocity_definition
+            container._updateRelations(square_corner_velocity_definition)
+
+        # Acceleration
+        if speed_category4 and not acceleration_setting:
+            # this machine doesn't have a Acceleration setting yet
+            speed_category4 = speed_category4[0]
+            klipper_acceleration_definition = SettingDefinition(self._setting_key_klipper_acceleration, container, speed_category4, self._i18n_catalog)
+            klipper_acceleration_definition.deserialize(self._setting_dict_klipper_acceleration)
+
+            # add the setting to the already existing speed settingdefinition
+            # private member access is naughty, but the alternative is to serialise, nix and deserialise the whole thing,
+            # which breaks stuff
+            speed_category4._children.append(klipper_acceleration_definition)
+            container._definition_cache[self._setting_key_klipper_acceleration] = klipper_acceleration_definition
+            container._updateRelations(klipper_acceleration_definition)
+
+        # Acceleration to Deceleration
+        if speed_category2 and not acceleration_to_deceleration_setting:
+            # this machine doesn't have a Acceleration to deceleration setting yet
+            speed_category2 = speed_category2[0]
+            klipper_acceleration_to_deceleration_definition = SettingDefinition(self._setting_key_klipper_acceleration_to_deceleration, container, speed_category2, self._i18n_catalog)
+            klipper_acceleration_to_deceleration_definition.deserialize(self._setting_dict_klipper_acceleration_to_deceleration)
+
+            # add the setting to the already existing speed settingdefinition
+            # private member access is naughty, but the alternative is to serialise, nix and deserialise the whole thing,
+            # which breaks stuff
+            speed_category2._children.append(klipper_acceleration_to_deceleration_definition)
+            container._definition_cache[self._setting_key_klipper_acceleration_to_deceleration] = klipper_acceleration_to_deceleration_definition
+            container._updateRelations(klipper_acceleration_to_deceleration_definition)
+
+        # Acceleration Order
+        if speed_category3 and not acceleration_order_setting:
+            # this machine doesn't have a Acceleration to deceleration setting yet
+            speed_category3 = speed_category3[0]
+            klipper_acceleration_order_definition = SettingDefinition(self._setting_key_klipper_acceleration_order, container, speed_category3, self._i18n_catalog)
+            klipper_acceleration_order_definition.deserialize(self._setting_dict_klipper_acceleration_order)
+
+            # add the setting to the already existing speed settingdefinition
+            # private member access is naughty, but the alternative is to serialise, nix and deserialise the whole thing,
+            # which breaks stuff
+            speed_category3._children.append(klipper_acceleration_order_definition)
+            container._definition_cache[self._setting_key_klipper_acceleration_order] = klipper_acceleration_order_definition
+            container._updateRelations(klipper_acceleration_order_definition)
+
+    def _filterGcode(self, output_device):
+        scene = self._application.getController().getScene()
+
+        global_container_stack = self._application.getGlobalContainerStack()
+        if not global_container_stack:
+            return
+
+        # check if ADVANCE Lookahead settings are already applied
+        start_gcode = global_container_stack.getProperty("machine_start_gcode", "value")
+        if "ADVANCE_LOOKAHEAD_TIME " in start_gcode:
+            return
+
+        # get Pressure Advance Lookahead setting from Cura
+        pressure_advance_lookahead_factor = global_container_stack.getProperty(self._setting_key_klipper_pressure_advance_lookahead, "value")
+        if pressure_advance_lookahead_factor == 0:
+            return
+
+        # check if ADVANCE settings are already applied
+        start_gcode = global_container_stack.getProperty("machine_start_gcode", "value")
+        if "ADVANCE " in start_gcode:
+            return
+
+        # get Pressure Advance setting from Cura
+        pressure_advance_factor = global_container_stack.getProperty(self._setting_key_klipper_pressure_advance, "value")
+        if pressure_advance_factor == 0:
+            return
+
+        # check if SQUARE_CORNER_VELOCITY settings are already applied
+        start_gcode = global_container_stack.getProperty("machine_start_gcode", "value")
+        if "SQUARE_CORNER_VELOCITY " in start_gcode:
+            return
+
+        # get Square Corner Velocity setting from Cura
+        square_corner_velocity_factor = global_container_stack.getProperty(self._setting_key_square_corner_velocity, "value")
+        if square_corner_velocity_factor == 0:
+            return
+
+        # check if Acceleleration settings are already applied
+        start_gcode = global_container_stack.getProperty("machine_start_gcode", "value")
+        if "ACCEL " in start_gcode:
+            return
+
+        # get Acceleration setting from Cura
+        acceleration_factor = global_container_stack.getProperty(self._setting_key_klipper_acceleration, "value")
+        if acceleration_factor == 0:
+            return
+
+        # check if Accel to Decel settings are already applied
+        start_gcode = global_container_stack.getProperty("machine_start_gcode", "value")
+        if "ACCEL_TO_DECEL " in start_gcode:
+            return
+
+        # get Acceleration to Deceleration Velocity setting from Cura
+        acceleration_to_deceleration_factor = global_container_stack.getProperty(self._setting_key_klipper_acceleration_to_deceleration, "value")
+        if acceleration_to_deceleration_factor == 0:
+            return
+
+        # check if Accel Order settings are already applied
+        start_gcode = global_container_stack.getProperty("machine_start_gcode", "value")
+        if "ACCEL_ORDER " in start_gcode:
+            return
+
+        # get Acceleration Order setting from Cura
+        acceleration_order_factor = global_container_stack.getProperty(self._setting_key_klipper_acceleration_order, "value")
+
+        if acceleration_order_factor == 2 or acceleration_order_factor == 4 or acceleration_order_factor == 6:
+            acceleration_order_factor1 = acceleration_order_factor
+        else:
+            acceleration_order_factor = 2
+
+        if acceleration_order_factor == 0:
+            return
+
+        gcode_dict = getattr(scene, "gcode_dict", {})
+        if not gcode_dict: # this also checks for an empty dict
+            Logger.log("w", "Scene has no gcode to process")
+            return
+
+        dict_changed = False
+
+        for plate_id in gcode_dict:
+            gcode_list = gcode_dict[plate_id]
+            if len(gcode_list) < 2:
+                Logger.log("w", "Plate %s does not contain any layers", plate_id)
+                continue
+
+            if ";PRESSURE_ADVANCEPROCESSED\n" not in gcode_list[0]:
+                gcode_list[1] = ("SET_PRESSURE_ADVANCE ADVANCE=%f ;added by KlipperSettingsPlugin\n" % pressure_advance_factor) + gcode_list[1]
+                gcode_list[0] += ";PRESSURE_ADVANCEPROCESSED\n"
+                gcode_dict[plate_id] = gcode_list
+                dict_changed = True
+            else:
+                Logger.log("d", "Plate %s has already been processed", plate_id)
+                continue
+
+            if ";PRESSURE_ADVANCE_LOOKAHEADPROCESSED\n" not in gcode_list[0]:
+                gcode_list[1] = ("SET_PRESSURE_ADVANCE ADVANCE_LOOKAHEAD_TIME=%f ;added by KlipperSettingsPlugin\n" % pressure_advance_lookahead_factor) + gcode_list[1]
+                gcode_list[0] += ";PRESSURE_ADVANCE_LOOKAHEADPROCESSED\n"
+                gcode_dict[plate_id] = gcode_list
+                dict_changed = True
+            else:
+                Logger.log("d", "Plate %s has already been processed", plate_id)
+                continue
+
+            if ";SQUARE_CORNER_VELOCITYPROCESSED\n" not in gcode_list[0]:
+                gcode_list[1] = ("SET_VELOCITY_LIMIT SQUARE_CORNER_VELOCITY=%f ;added by KlipperSettingsPlugin\n" % square_corner_velocity_factor) + gcode_list[1]
+                gcode_list[0] += ";SQUARE_CORNER_VELOCITYPROCESSED\n"
+                gcode_dict[plate_id] = gcode_list
+                dict_changed = True
+            else:
+                Logger.log("d", "Plate %s has already been processed", plate_id)
+                continue
+
+            if ";ACCELPROCESSED\n" not in gcode_list[0]:
+                gcode_list[1] = ("SET_VELOCITY_LIMIT ACCEL=%f ;added by KlipperSettingsPlugin\n" % acceleration_factor) + gcode_list[1]
+                gcode_list[0] += ";ACCELPROCESSED\n"
+                gcode_dict[plate_id] = gcode_list
+                dict_changed = True
+            else:
+                Logger.log("d", "Plate %s has already been processed", plate_id)
+                continue
+
+            if ";ACCEL_TO_DECELPROCESSED\n" not in gcode_list[0]:
+                gcode_list[1] = ("SET_VELOCITY_LIMIT ACCEL_TO_DECEL=%f ;added by KlipperSettingsPlugin\n" % acceleration_to_deceleration_factor) + gcode_list[1]
+                gcode_list[0] += ";ACCEL_TO_DECELPROCESSED\n"
+                gcode_dict[plate_id] = gcode_list
+                dict_changed = True
+            else:
+                Logger.log("d", "Plate %s has already been processed", plate_id)
+                continue
+
+            if ";ACCEL_ORDERPROCESSED\n" not in gcode_list[0]:
+                gcode_list[1] = ("SET_VELOCITY_LIMIT ACCEL_ORDER=%d ;added by KlipperSettingsPlugin\n" % acceleration_order_factor) + gcode_list[1]
+                gcode_list[0] += ";ACCEL_ORDERPROCESSED\n"
+                gcode_dict[plate_id] = gcode_list
+                dict_changed = True
+            else:
+                Logger.log("d", "Plate %s has already been processed", plate_id)
+                continue
+
+        if dict_changed == True:
+            setattr(scene, "gcode_dict", gcode_dict)
