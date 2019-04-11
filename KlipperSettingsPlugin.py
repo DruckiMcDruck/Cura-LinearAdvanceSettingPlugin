@@ -80,9 +80,9 @@ class KlipperSettingsPlugin(Extension):
         self._setting_key_klipper_acceleration_order = "speed_klipper_acceleration_order"
         self._setting_dict_klipper_acceleration_order = {
             "label": "Klipper Acceleration Order",
-            "description": "Sets the Acceleration Order for Klipper. Note that only 2, 4 and 6 are valid options. Will default to 2 if wrong value is set.",
+            "description": "WARNING: Does only work if you have SCurve acceleration! Use Zero as value if you don't! Sets the Acceleration Order for Klipper. Note that only 0, 2, 4 and 6 are valid options. Will default to 2 if wrong value is set.",
             "type": "int",
-            "default_value": 2,
+            "default_value": 0,
             "settable_per_mesh": False,
             "settable_per_extruder": False,
             "settable_per_meshgroup": False
@@ -263,13 +263,13 @@ class KlipperSettingsPlugin(Extension):
         # get Acceleration Order setting from Cura
         acceleration_order_factor = global_container_stack.getProperty(self._setting_key_klipper_acceleration_order, "value")
 
-        if acceleration_order_factor == 2 or acceleration_order_factor == 4 or acceleration_order_factor == 6:
+        if acceleration_order_factor == 0 or acceleration_order_factor == 2 or acceleration_order_factor == 4 or acceleration_order_factor == 6:
             acceleration_order_factor1 = acceleration_order_factor
         else:
             acceleration_order_factor = 2
 
-        if acceleration_order_factor == 0:
-            return
+        #if acceleration_order_factor == 0: 
+        #    return
 
         gcode_dict = getattr(scene, "gcode_dict", {})
         if not gcode_dict: # this also checks for an empty dict
@@ -329,7 +329,7 @@ class KlipperSettingsPlugin(Extension):
                 Logger.log("d", "Plate %s has already been processed", plate_id)
                 continue
 
-            if ";ACCEL_ORDERPROCESSED\n" not in gcode_list[0]:
+            if ";ACCEL_ORDERPROCESSED\n" not in gcode_list[0] and acceleration_order_factor != 0:
                 gcode_list[1] = ("SET_VELOCITY_LIMIT ACCEL_ORDER=%d ;added by KlipperSettingsPlugin\n" % acceleration_order_factor) + gcode_list[1]
                 gcode_list[0] += ";ACCEL_ORDERPROCESSED\n"
                 gcode_dict[plate_id] = gcode_list
