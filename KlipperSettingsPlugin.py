@@ -31,12 +31,12 @@ class KlipperSettingsPlugin(Extension):
             "settable_per_meshgroup": False
         }
 
-        self._setting_key_klipper_pressure_advance_lookahead = "material_klipper_pressure_advance_lookahead"
-        self._setting_dict_klipper_pressure_advance_lookahead = {
-            "label": "Klipper Pressure Advance Lookahead",
+        self._setting_key_klipper_pressure_advance_smoothtime = "material_klipper_pressure_advance_smoothtime"
+        self._setting_dict_klipper_pressure_advance_smoothtime = {
+            "label": "Klipper Pressure Advance smoothtime",
             "description": "blabla",
             "type": "float",
-            "default_value": 0.01,
+            "default_value": 0.04,
             "settable_per_mesh": False,
             "settable_per_extruder": False,
             "settable_per_meshgroup": False
@@ -101,32 +101,32 @@ class KlipperSettingsPlugin(Extension):
             return
 
         material_category1 = container.findDefinitions(key="material") # Pressure Advance
-        material_category2 = container.findDefinitions(key="material") # Pressure Advance Lookahead
+        material_category2 = container.findDefinitions(key="material") # Pressure Advance smoothtime
         speed_category1 = container.findDefinitions(key="speed") # square corner velocity
         speed_category4 = container.findDefinitions(key="speed") # acceleration
         speed_category2 = container.findDefinitions(key="speed") # acceleration to deceleration
         speed_category3 = container.findDefinitions(key="speed") # acceleration order
 
         pressure_advance_setting = container.findDefinitions(key=self._setting_key_klipper_pressure_advance)
-        pressure_advance_lookahead_setting = container.findDefinitions(key=self._setting_key_klipper_pressure_advance_lookahead)
+        pressure_advance_smoothtime_setting = container.findDefinitions(key=self._setting_key_klipper_pressure_advance_smoothtime)
         square_corner_velocity_setting = container.findDefinitions(key=self._setting_key_square_corner_velocity)
         acceleration_setting = container.findDefinitions(key=self._setting_key_klipper_acceleration)
         acceleration_to_deceleration_setting = container.findDefinitions(key=self._setting_key_klipper_acceleration_to_deceleration)
         acceleration_order_setting = container.findDefinitions(key=self._setting_key_klipper_acceleration_order)
 
-        # Pressure Advance Lookahead
-        if material_category2 and not pressure_advance_lookahead_setting:
+        # Pressure Advance smoothtime
+        if material_category2 and not pressure_advance_smoothtime_setting:
             # this machine doesn't have a Pressure Advance setting yet
             material_category2 = material_category2[0]
-            pressure_advance_lookahead_definition = SettingDefinition(self._setting_key_klipper_pressure_advance_lookahead, container, material_category2, self._i18n_catalog)
-            pressure_advance_lookahead_definition.deserialize(self._setting_dict_klipper_pressure_advance_lookahead)
+            pressure_advance_smoothtime_definition = SettingDefinition(self._setting_key_klipper_pressure_advance_smoothtime, container, material_category2, self._i18n_catalog)
+            pressure_advance_smoothtime_definition.deserialize(self._setting_dict_klipper_pressure_advance_smoothtime)
 
             # add the setting to the already existing PA setting definition
             # private member access is naughty, but the alternative is to serialise, nix and deserialise the whole thing,
             # which breaks stuff
-            material_category2._children.append(pressure_advance_lookahead_definition)
-            container._definition_cache[self._setting_key_klipper_pressure_advance_lookahead] = pressure_advance_lookahead_definition
-            container._updateRelations(pressure_advance_lookahead_definition)
+            material_category2._children.append(pressure_advance_smoothtime_definition)
+            container._definition_cache[self._setting_key_klipper_pressure_advance_smoothtime] = pressure_advance_smoothtime_definition
+            container._updateRelations(pressure_advance_smoothtime_definition)
 
         # Pressure Advance
         if material_category1 and not pressure_advance_setting:
@@ -205,14 +205,14 @@ class KlipperSettingsPlugin(Extension):
         if not global_container_stack:
             return
 
-        # check if ADVANCE Lookahead settings are already applied
+        # check if ADVANCE smoothtime settings are already applied
         start_gcode = global_container_stack.getProperty("machine_start_gcode", "value")
-        if "ADVANCE_LOOKAHEAD_TIME " in start_gcode:
+        if "ADVANCE_smoothtime_TIME " in start_gcode:
             return
 
-        # get Pressure Advance Lookahead setting from Cura
-        pressure_advance_lookahead_factor = global_container_stack.getProperty(self._setting_key_klipper_pressure_advance_lookahead, "value")
-        if pressure_advance_lookahead_factor == 0:
+        # get Pressure Advance smoothtime setting from Cura
+        pressure_advance_smoothtime_factor = global_container_stack.getProperty(self._setting_key_klipper_pressure_advance_smoothtime, "value")
+        if pressure_advance_smoothtime_factor == 0:
             return
 
         # check if ADVANCE settings are already applied
@@ -268,7 +268,7 @@ class KlipperSettingsPlugin(Extension):
         else:
             acceleration_order_factor = 2
 
-        #if acceleration_order_factor == 0: 
+        #if acceleration_order_factor == 0:
         #    return
 
         gcode_dict = getattr(scene, "gcode_dict", {})
@@ -293,9 +293,9 @@ class KlipperSettingsPlugin(Extension):
                 Logger.log("d", "Plate %s has already been processed", plate_id)
                 continue
 
-            if ";PRESSURE_ADVANCE_LOOKAHEADPROCESSED\n" not in gcode_list[0]:
-                gcode_list[1] = ("SET_PRESSURE_ADVANCE ADVANCE_LOOKAHEAD_TIME=%f ;added by KlipperSettingsPlugin\n" % pressure_advance_lookahead_factor) + gcode_list[1]
-                gcode_list[0] += ";PRESSURE_ADVANCE_LOOKAHEADPROCESSED\n"
+            if ";PRESSURE_ADVANCE_smoothtimePROCESSED\n" not in gcode_list[0]:
+                gcode_list[1] = ("SET_PRESSURE_ADVANCE ADVANCE_smoothtime_TIME=%f ;added by KlipperSettingsPlugin\n" % pressure_advance_smoothtime_factor) + gcode_list[1]
+                gcode_list[0] += ";PRESSURE_ADVANCE_smoothtimePROCESSED\n"
                 gcode_dict[plate_id] = gcode_list
                 dict_changed = True
             else:
