@@ -222,8 +222,8 @@ class KlipperSettingsPlugin(Extension):
 
         # get Pressure Advance setting from Cura
         pressure_advance_factor = global_container_stack.getProperty(self._setting_key_klipper_pressure_advance, "value")
-       # if pressure_advance_factor == 0:
-       #     return
+        if pressure_advance_factor == 0:
+            return
 
         # check if SQUARE_CORNER_VELOCITY settings are already applied
         start_gcode = global_container_stack.getProperty("machine_start_gcode", "value")
